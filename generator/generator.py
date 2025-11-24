@@ -1,6 +1,7 @@
+import math
 from faker import Faker
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import json
 
@@ -12,7 +13,7 @@ class VirtualSensor:
         self.group_id = group_id
 
         # Физические показатели
-        self.humidity = 45.0
+        self.base_humidity_bias = np.random.normal(0, 2) # У каждого датчика своя "погрешность" влажности
         self.battery = 100.0
         
         # Состояние "здоровья"
@@ -43,7 +44,7 @@ class VirtualSensor:
                 self.drift_offset = 0.0
                 self.frozen_value = None
     
-    def emit_data(self, true_temp):
+    def emit_data(self, true_temp, current_time):
         self.update_health(true_temp)
         
         final_temp = 0.0
@@ -58,7 +59,7 @@ class VirtualSensor:
         
         # Дрейф (плавный уход)
         elif self.anomaly_mode == 'drift':
-            self.drift_offset += np.random.uniform(0.2, 0.5) # Каждый шаг ошибка растет на 0.2 - 0.5 градуса
+            self.drift_offset += np.random.uniform(0.1, 0.3) # Каждый шаг ошибка растет на 0.1 - 0.3 градуса
             final_temp = true_temp + self.drift_offset
             
             # Если ушли достаточно далеко, то считаем аномалией
@@ -73,19 +74,22 @@ class VirtualSensor:
             final_temp = true_temp + np.random.normal(0, 0.2)
             is_anomaly_flag = False
         
-        self.humidity += np.random.normal(0, 1)
-        if self.humidity > 100: self.humidity = 100
-        if self.humidity < 0: self.humidity = 0
+        humidity_noise = np.random.normal(0, 0.5)
+        # Если температура +25, влажность падает. Если +18, растет.
+        calculated_humidity = 45.0 - (final_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
+
+        calculated_humidity = max(0, min(100, calculated_humidity))
         
-        self.battery -= 0.01
+        self.battery -= np.random.uniform(0.001, 0.005)
+        if self.battery < 0: self.battery = 0.0
         
         data = {
             'event_id': fake.uuid4(),
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': current_time,
             'sensor_id': self.sensor_id,
             'group_id': self.group_id,
             'temperature': round(final_temp, 2),
-            'humidity': round(self.humidity, 2),
+            'humidity': round(calculated_humidity, 2),
             'battery': round(self.battery, 2),
             'firmware': '1.2.0v',
             'meta_info': {'is_anomaly': is_anomaly_flag, 'error_type': error_type_label}
@@ -109,26 +113,34 @@ def inject_format_errors(data):
 
 
 if __name__ == '__main__':
-    
-    environment_temps = {1: 22.0, 2: 25.0}
-    
     sensors = [
         VirtualSensor(sensor_id=1, group_id=1),
         VirtualSensor(sensor_id=2, group_id=1),
         VirtualSensor(sensor_id=3, group_id=2)
     ]
     
+    # Начинаем эксперимент с 1 января 2024 года, 00:00
+    sim_time = datetime(2025, 1, 1, 0, 0, 0)
+    
+    time_step = timedelta(minutes=5)
+    
     try:
         while True:
-            for group_id in environment_temps:
-                environment_temps[group_id] += np.random.normal(0, 0.1)
+            current_hour = sim_time.hour + sim_time.minute / 60.0 # Расчет текущего часа (с долями), например 14.5 = 14:30
+            
+            env_temp_1 = 22.5 + 2.5 * math.cos((current_hour - 14) * math.pi / 12)
+            env_temp_2 = 19.0 + 1.0 * math.cos((current_hour - 14) * math.pi / 12)
+            
+            environment_state = {1: env_temp_1, 2: env_temp_2}
             
             for sensor in sensors:
-                event = sensor.emit_data(environment_temps[sensor.group_id])
+                event = sensor.emit_data(environment_state[sensor.group_id], sim_time.isoformat())
                 
                 event = inject_format_errors(event)
                     
                 print(json.dumps(event))
+            
+            sim_time += time_step
                 
             time.sleep(1)
             print("-" * 50)
