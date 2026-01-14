@@ -1,4 +1,6 @@
 import math
+import os
+from kafka import KafkaProducer
 from faker import Faker
 import numpy as np
 from datetime import datetime, timedelta
@@ -13,10 +15,10 @@ class VirtualSensor:
         self.group_id = group_id
 
         # Физические показатели
-        self.base_humidity_bias = np.random.normal(0, 2) # У каждого датчика своя "погрешность" влажности
+        self.base_humidity_bias = np.random.normal(0, 2) # У каждого датчика своя 'погрешность' влажности
         self.battery = 100.0
         
-        # Состояние "здоровья"
+        # Состояние 'здоровья'
         self.anomaly_mode = None  # 'drift', 'frozen', или None (здоров)
         self.drift_offset = 0.0   # Накопленная ошибка для дрейфа
         self.frozen_value = None  # Значение, на котором завис
@@ -113,6 +115,12 @@ def inject_format_errors(data):
 
 
 if __name__ == '__main__':
+    kafka_broker = os.environ.get('KAFKA_BROKER_URL', 'localhost:9092')
+    producer = KafkaProducer(
+        bootstrap_servers=kafka_broker, 
+        value_serializer=lambda x: json.dumps(x).encode('utf-8')
+    )   
+    
     sensors = [
         VirtualSensor(sensor_id=1, group_id=1),
         VirtualSensor(sensor_id=2, group_id=1),
@@ -137,13 +145,15 @@ if __name__ == '__main__':
                 event = sensor.emit_data(environment_state[sensor.group_id], sim_time.isoformat())
                 
                 event = inject_format_errors(event)
-                    
-                print(json.dumps(event))
+                
+                producer.send('raw_events', event)
+                
+                print(f'Отправлен event sensor_id={sensor.sensor_id}')
             
             sim_time += time_step
                 
             time.sleep(1)
-            print("-" * 50)
-
+            print('-' * 50)
+                
     except KeyboardInterrupt:
-        print("\nГенератор остановлен.")
+        print('\nГенератор остановлен.')
