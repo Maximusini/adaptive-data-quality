@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col
+import pyspark.sql.functions as sf
 from pyspark.sql.types import StructType, StructField, DoubleType, IntegerType, StringType, TimestampType, BooleanType
 
 spark = SparkSession\
@@ -36,13 +36,51 @@ source = spark.readStream\
     .load()
 
 df = source \
-    .select(from_json(col('value').cast('string'), schema).alias('data')) \
+    .select(sf.from_json(sf.col('value').cast('string'), schema).alias('data')) \
     .select('data.*')
     
-console = df.writeStream \
-    .outputMode('append') \
-    .format('console') \
-    .option('truncate', False) \
+df_validated = df.withColumn('validation_error',
+                             sf.when(
+                                 sf.col('sensor_id').isNull() |
+                                 sf.col('group_id').isNull() |
+                                 sf.col('timestamp').isNull() |
+                                 sf.col('event_id').isNull(),
+                                 'missing_critical_fields'                                 
+                             )
+                             
+                             .when(
+                                 ~sf.col('event_id').rlike('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'),
+                                 'invalid_format'
+                             )
+                             
+                             .when(
+                                 (sf.col('temperature') < -50) | (sf.col('temperature') > 100),
+                                 'temperature_out_of_range'
+                             )
+                             
+                             .when(
+                                 (sf.col('humidity') < 0) | (sf.col('humidity') > 100),
+                                 'humidity_out_of_range'
+                             )
+                             
+                             .otherwise(None)
+                             )
+    
+valid_df = df_validated.where('validation_error IS NULL').select(sf.to_json(sf.struct('*')).alias('value'))
+invalid_df = df_validated.where('validation_error IS NOT NULL').select(sf.to_json(sf.struct('*')).alias('value'))
+
+query_valid = valid_df.writeStream \
+    .format('kafka') \
+    .option('kafka.bootstrap.servers', 'kafka:29092') \
+    .option('topic', 'technically_valid_events') \
+    .option('checkpointLocation', '/tmp/checkpoints/valid') \
     .start()
     
-console.awaitTermination()
+query_invalid = invalid_df.writeStream \
+    .format('kafka') \
+    .option('kafka.bootstrap.servers', 'kafka:29092') \
+    .option('topic', 'quarantined_events') \
+    .option('checkpointLocation', '/tmp/checkpoints/invalid') \
+    .start()
+
+spark.streams.awaitAnyTermination()
