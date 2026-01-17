@@ -1,6 +1,6 @@
-from pyspark.sql import SparkSession
 import pyspark.sql.functions as sf
-from pyspark.sql.types import StructType, StructField, DoubleType, IntegerType, StringType, TimestampType, BooleanType
+from pyspark.sql import SparkSession
+from schemas import base_schema
 
 spark = SparkSession\
     .builder\
@@ -10,24 +10,6 @@ spark = SparkSession\
 
 spark.sparkContext.setLogLevel('WARN')
 
-meta_schema = StructType([
-    StructField('is_anomaly', BooleanType()),
-    StructField('error_type', StringType()),
-    
-])
-
-schema = StructType([
-    StructField('event_id', StringType()),
-    StructField('timestamp', TimestampType()),
-    StructField('sensor_id', IntegerType()),
-    StructField('group_id', IntegerType()),
-    StructField('temperature', DoubleType()),
-    StructField('humidity', DoubleType()),
-    StructField('battery', DoubleType()),
-    StructField('firmware', StringType()),
-    StructField('meta_info', meta_schema)
-])
-
 source = spark.readStream\
     .format('kafka') \
     .option('kafka.bootstrap.servers', 'kafka:29092') \
@@ -36,7 +18,7 @@ source = spark.readStream\
     .load()
 
 df = source \
-    .select(sf.from_json(sf.col('value').cast('string'), schema).alias('data')) \
+    .select(sf.from_json(sf.col('value').cast('string'), base_schema).alias('data')) \
     .select('data.*')
     
 df_validated = df.withColumn('validation_error',
