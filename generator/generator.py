@@ -121,11 +121,13 @@ if __name__ == '__main__':
         value_serializer=lambda x: json.dumps(x).encode('utf-8')
     )   
     
-    sensors = [
-        VirtualSensor(sensor_id=1, group_id=1),
-        VirtualSensor(sensor_id=2, group_id=1),
-        VirtualSensor(sensor_id=3, group_id=2)
-    ]
+    NUM_SENSORS = 40
+    NUM_GROUPS = 10
+    
+    sensors = []
+    for i in range(1, NUM_SENSORS + 1):
+        group_id = (i % NUM_GROUPS) + 1
+        sensors.append(VirtualSensor(sensor_id=i, group_id=group_id))
     
     # Начинаем эксперимент с 1 января 2024 года, 00:00
     sim_time = datetime(2025, 1, 1, 0, 0, 0)
@@ -136,10 +138,14 @@ if __name__ == '__main__':
         while True:
             current_hour = sim_time.hour + sim_time.minute / 60.0 # Расчет текущего часа (с долями), например 14.5 = 14:30
             
-            env_temp_1 = 22.5 + 2.5 * math.cos((current_hour - 14) * math.pi / 12)
-            env_temp_2 = 19.0 + 1.0 * math.cos((current_hour - 14) * math.pi / 12)
-            
-            environment_state = {1: env_temp_1, 2: env_temp_2}
+            environment_state = {}
+            for g_id in range(1, NUM_GROUPS + 1):
+                base_temp_offset = ((g_id * 3) % 7) - 3 # Смещение от -3 до +3
+                base_temp = 22.0 + base_temp_offset
+                
+                # Синусоида суточного цикла (пик в 14:00)
+                current_temp = base_temp + 2.5 * math.cos((current_hour - 14) * math.pi / 12)
+                environment_state[g_id] = current_temp
             
             for sensor in sensors:
                 event = sensor.emit_data(environment_state[sensor.group_id], sim_time.isoformat())
