@@ -21,19 +21,27 @@ class VirtualSensor:
         # Состояние 'здоровья'
         self.anomaly_mode = None  # 'drift', 'frozen', или None (здоров)
         self.drift_offset = 0.0   # Накопленная ошибка для дрейфа
-        self.frozen_value = None  # Значение, на котором завис
+        self.frozen_temp_val = None  # Значение, на котором завис граудсник
+        self.frozen_hum_val = None # Значение, на котором завис гигрометр
         self.steps_in_anomaly = 0 # Сколько тактов уже длится глюк
         
-    def update_health(self, current_true_temp):
+    def update_health(self, current_true_temp, current_true_hum):
         # Если датчик здоров, есть шанс 5%, что он сломается
         if self.anomaly_mode is None:
             if np.random.random() < 0.05:
-                if np.random.random() < 0.5:
+                r = np.random.random()
+                
+                if r < 0.33:
                     self.anomaly_mode = 'drift'
                     self.drift_offset = 0.0
+                    
+                elif r < 0.66:
+                    self.anomaly_mode = 'frozen_temp'
+                    self.frozen_temp_val = current_true_temp + np.random.normal(0, 0.2)
+                    
                 else:
-                    self.anomaly_mode = 'frozen'
-                    self.frozen_value = current_true_temp + np.random.normal(0, 0.2)
+                    self.anomaly_mode = 'frozen_hum'
+                    self.frozen_hum_val = current_true_hum + np.random.normal(0, 0.2)
                 
                 self.steps_in_anomaly = 0
 
@@ -44,20 +52,30 @@ class VirtualSensor:
             if np.random.random() < 0.1: # 10% шанс починиться
                 self.anomaly_mode = None
                 self.drift_offset = 0.0
-                self.frozen_value = None
+                self.frozen_temp_val = None
+                self.frozen_hum_val = None
     
     def emit_data(self, true_temp, current_time):
-        self.update_health(true_temp)
+        humidity_noise = np.random.normal(0, 0.5)
+        # Если температура +25, влажность падает. Если +18, растет.
+        true_humidity = 45.0 - (true_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
+        true_humidity = max(0, min(100, true_humidity))
+        
+        self.update_health(true_temp, true_humidity)
         
         final_temp = 0.0
-        is_anomaly_flag = False
+        final_hum = 0.0
+        
+        temp_is_anomaly = False
+        hum_is_anomaly = False
         error_type_label = None
 
-        # Зависший датчик
-        if self.anomaly_mode == 'frozen':
-            final_temp = self.frozen_value # Игнорируем реальную true_temp
-            is_anomaly_flag = True
-            error_type_label = 'frozen_sensor'
+        # --- ТЕМПЕРАТУРА ---
+        # Зависший градусник
+        if self.anomaly_mode == 'frozen_temp':
+            final_temp = self.frozen_temp_val # Игнорируем реальную true_temp
+            temp_is_anomaly = True
+            error_type_label = 'frozen_temp'
         
         # Дрейф (плавный уход)
         elif self.anomaly_mode == 'drift':
@@ -66,21 +84,29 @@ class VirtualSensor:
             
             # Если ушли достаточно далеко, то считаем аномалией
             if abs(self.drift_offset) > 3.0:
-                is_anomaly_flag = True
+                temp_is_anomaly = True
                 error_type_label = 'calibration_drift'
             else:
-                is_anomaly_flag = False 
+                temp_is_anomaly = False
         
         # Здоров
         else:
             final_temp = true_temp + np.random.normal(0, 0.2)
-            is_anomaly_flag = False
-        
-        humidity_noise = np.random.normal(0, 0.5)
-        # Если температура +25, влажность падает. Если +18, растет.
-        calculated_humidity = 45.0 - (final_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
-
-        calculated_humidity = max(0, min(100, calculated_humidity))
+            temp_is_anomaly = False
+            
+        # --- ВЛАЖНОСТЬ ---
+        # Зависший гигрометр
+        if self.anomaly_mode == 'frozen_hum':
+            final_hum = self.frozen_hum_val
+            hum_is_anomaly = True
+            error_type_label = 'frozen_hum'
+            
+        # Здоров
+        else:
+            final_hum = true_humidity
+            hum_is_anomaly = False
+            
+        final_is_anomaly = temp_is_anomaly or hum_is_anomaly
         
         self.battery -= np.random.uniform(0.001, 0.005)
         if self.battery < 0: self.battery = 0.0
@@ -91,10 +117,10 @@ class VirtualSensor:
             'sensor_id': self.sensor_id,
             'group_id': self.group_id,
             'temperature': round(final_temp, 2),
-            'humidity': round(calculated_humidity, 2),
+            'humidity': round(final_hum, 2),
             'battery': round(self.battery, 2),
             'firmware': '1.2.0v',
-            'meta_info': {'is_anomaly': is_anomaly_flag, 'error_type': error_type_label}
+            'meta_info': {'is_anomaly': final_is_anomaly, 'error_type': error_type_label}
         }
         return data
 
@@ -158,7 +184,7 @@ if __name__ == '__main__':
             
             sim_time += time_step
                 
-            time.sleep(1)
+            time.sleep(0.1)
             print('-' * 50)
                 
     except KeyboardInterrupt:
