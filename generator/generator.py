@@ -26,22 +26,28 @@ class VirtualSensor:
         self.steps_in_anomaly = 0 # Сколько тактов уже длится глюк
         
     def update_health(self, current_true_temp, current_true_hum):
-        # Если датчик здоров, есть шанс 5%, что он сломается
+        # Если датчик здоров, есть шанс 0.1%, что он сломается
         if self.anomaly_mode is None:
-            if np.random.random() < 0.05:
+            if np.random.random() < 0.001:
                 r = np.random.random()
                 
-                if r < 0.33:
+                if r < 0.2:
                     self.anomaly_mode = 'drift'
                     self.drift_offset = 0.0
                     
-                elif r < 0.66:
+                elif r < 0.4:
                     self.anomaly_mode = 'frozen_temp'
                     self.frozen_temp_val = current_true_temp + np.random.normal(0, 0.2)
                     
-                else:
+                elif r < 0.6:
                     self.anomaly_mode = 'frozen_hum'
                     self.frozen_hum_val = current_true_hum + np.random.normal(0, 0.2)
+                    
+                elif r < 0.8:
+                    self.anomaly_mode = 'jitter'
+                    
+                else:
+                    self.anomaly_mode = 'physics_error'
                 
                 self.steps_in_anomaly = 0
 
@@ -56,19 +62,27 @@ class VirtualSensor:
                 self.frozen_hum_val = None
     
     def emit_data(self, true_temp, current_time):
-        humidity_noise = np.random.normal(0, 0.5)
-        # Если температура +25, влажность падает. Если +18, растет.
-        true_humidity = 45.0 - (true_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
-        true_humidity = max(0, min(100, true_humidity))
+        approx_hum = 45.0 - (true_temp - 22.0) * 2.5 + self.base_humidity_bias
+        self.update_health(true_temp, approx_hum)
         
-        self.update_health(true_temp, true_humidity)
+        humidity_noise = np.random.normal(0, 0.5)
+        is_physics_broken = (self.anomaly_mode == 'physics_error')
+        
+        if is_physics_broken:
+            true_humidity = 45.0 + (true_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
+            
+        else:
+            # Если температура +25, влажность падает. Если +18, растет.
+            true_humidity = 45.0 - (true_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
+            true_humidity = max(0, min(100, true_humidity))
         
         final_temp = 0.0
         final_hum = 0.0
         
         temp_is_anomaly = False
         hum_is_anomaly = False
-        error_type_label = None
+        
+        error_type_label = 'Ok'
 
         # --- ТЕМПЕРАТУРА ---
         # Зависший градусник
@@ -89,6 +103,12 @@ class VirtualSensor:
             else:
                 temp_is_anomaly = False
         
+        # Шум/лихорадка градусника
+        elif self.anomaly_mode == 'jitter':
+            final_temp = true_temp + np.random.normal(0, 2.5)
+            temp_is_anomaly = True
+            error_type_label = 'jitter'
+        
         # Здоров
         else:
             final_temp = true_temp + np.random.normal(0, 0.2)
@@ -106,9 +126,12 @@ class VirtualSensor:
             final_hum = true_humidity
             hum_is_anomaly = False
             
-        final_is_anomaly = temp_is_anomaly or hum_is_anomaly
+        if is_physics_broken:
+            error_type_label = 'physics_error'
+            
+        final_is_anomaly = temp_is_anomaly or hum_is_anomaly or is_physics_broken
         
-        self.battery -= np.random.uniform(0.001, 0.005)
+        self.battery -= np.random.uniform(0.0001, 0.0005)
         if self.battery < 0: self.battery = 0.0
         
         data = {
@@ -116,9 +139,9 @@ class VirtualSensor:
             'timestamp': current_time,
             'sensor_id': self.sensor_id,
             'group_id': self.group_id,
-            'temperature': round(final_temp, 2),
-            'humidity': round(final_hum, 2),
-            'battery': round(self.battery, 2),
+            'temperature': float(round(final_temp, 2)),
+            'humidity': float(round(final_hum, 2)),
+            'battery': float(round(self.battery, 2)),
             'firmware': '1.2.0v',
             'meta_info': {'is_anomaly': final_is_anomaly, 'error_type': error_type_label}
         }
@@ -158,7 +181,7 @@ if __name__ == '__main__':
     # Начинаем эксперимент с 1 января 2024 года, 00:00
     sim_time = datetime(2025, 1, 1, 0, 0, 0)
     
-    time_step = timedelta(minutes=5)
+    time_step = timedelta(minutes=1)
     
     try:
         while True:
@@ -184,7 +207,7 @@ if __name__ == '__main__':
             
             sim_time += time_step
                 
-            time.sleep(0.1)
+            time.sleep(0.25)
             print('-' * 50)
                 
     except KeyboardInterrupt:
