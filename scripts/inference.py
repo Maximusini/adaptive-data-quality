@@ -6,8 +6,11 @@ from pyspark.sql import SparkSession
 import pyspark.sql.functions as sf
 from schemas import base_schema, state_schema, output_schema
 
-CHECKPOINT_DIR = "/tmp/checkpoints/inference_stateful"
-MODEL_PATH = "/opt/spark/data/model.joblib"
+CHECKPOINT_DIR = '/tmp/checkpoints/inference_stateful'
+MODEL_PATH = '/opt/spark/data/model.joblib'
+WINDOW_SIZE = 30
+
+model = None
 
 def get_model(path):
     global model
@@ -31,6 +34,7 @@ def process_batch(key, pandasdf_iter, state):
     for df in pandasdf_iter:
         for index, row in df.iterrows():
             sensor_id = str(row['sensor_id'])
+            group_id = int(row['group_id'])
             curr_temp = float(row['temperature'])
             curr_hum = float(row['humidity'])
             
@@ -40,18 +44,18 @@ def process_batch(key, pandasdf_iter, state):
             room_history[sensor_id]['temps'].append(curr_temp)
             room_history[sensor_id]['hums'].append(curr_hum)
                 
-            if len(room_history[sensor_id]['temps']) > 12:
-                room_history[sensor_id]['temps'] = room_history[sensor_id]['temps'][-12:]
-                room_history[sensor_id]['hums'] = room_history[sensor_id]['hums'][-12:]
+            if len(room_history[sensor_id]['temps']) > WINDOW_SIZE:
+                room_history[sensor_id]['temps'] = room_history[sensor_id]['temps'][-WINDOW_SIZE:]
+                room_history[sensor_id]['hums'] = room_history[sensor_id]['hums'][-WINDOW_SIZE:]
                 
             temps_arr = np.array(room_history[sensor_id]['temps'])
             hums_arr = np.array(room_history[sensor_id]['hums'])
         
             if len(temps_arr) > 1:
-                temp_std = float(np.std(temps_arr))
+                temp_std = float(np.std(temps_arr, ddof=1))
                 temp_diff = float(abs(temps_arr[-1] - temps_arr[-2]))
                 
-                hum_std = float(np.std(hums_arr))
+                hum_std = float(np.std(hums_arr, ddof=1))
                 hum_diff = float(abs(hums_arr[-1] - hums_arr[-2]))
             
             else:
@@ -69,12 +73,19 @@ def process_batch(key, pandasdf_iter, state):
                     room_hums.append(sensor['hums'][-1])
             
             group_temp_mean = np.mean(room_temps)
-            group_temp_std = np.std(room_temps)
             
-            if group_temp_std == 0:
+            if len(room_temps) > 1:
+                group_temp_std = np.std(room_temps, ddof=1)
+            else:
+                group_temp_std = 0.0
+            
+            if group_temp_std == 0 or np.isnan(group_temp_std):
                 group_temp_std = 0.1
             
-            group_hum_mean = np.mean(room_hums)
+            if len(room_hums) > 0:
+                group_hum_mean = np.mean(room_hums)
+            else:
+                group_hum_mean = 0.0
             
             temp_dev = abs(curr_temp - group_temp_mean)
             hum_dev = abs(curr_hum - group_hum_mean)
@@ -107,6 +118,23 @@ def process_batch(key, pandasdf_iter, state):
                 }
                 
                 X = pd.DataFrame(input_data)
+                feature_order = [
+                    'temperature',
+                    'temp_diff',
+                    'temp_std',
+                    'humidity',
+                    'hum_diff',
+                    'hum_std',
+                    'hour_sin',
+                    'hour_cos',
+                    'temp_dev',
+                    'hum_dev',
+                    'temp_z'
+                ]
+                X = X[feature_order]
+                
+                X = X.fillna(0)
+                
                 pred = model.predict(X)[0]
                 
                 if pred == 1:
@@ -116,6 +144,7 @@ def process_batch(key, pandasdf_iter, state):
                 'event_id': str(row['event_id']),
                 'timestamp': row['timestamp'],
                 'sensor_id': int(sensor_id),
+                'group_id': int(group_id),
                 'temperature': float(curr_temp),
                 'humidity': float(curr_hum),
                 'temp_std': float(temp_std),
@@ -134,13 +163,15 @@ def process_batch(key, pandasdf_iter, state):
     new_json_str = json.dumps(room_history)
     state.update((key[0], new_json_str))
     
-    return pd.DataFrame(results)
+    yield pd.DataFrame(results)
 
 spark = SparkSession \
     .builder \
     .appName('AdaptiveDataQuality') \
     .config('spark.jars.packages', 'org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0') \
     .getOrCreate()
+    
+spark.sparkContext.setLogLevel('WARN')
     
 source = spark.readStream \
     .format('kafka') \
@@ -165,7 +196,7 @@ processed_df = df \
 anomalies_df = processed_df.filter('is_frozen = true OR is_anomaly_ml = true')
 
 output_query = anomalies_df \
-    .select(sf.to_json(sf.struct('*')).alias('value')) \
+    .select(sf.to_json(sf.struct('*'), {'ignoreNullFields': 'false'}).alias('value')) \
     .writeStream \
     .format('kafka') \
     .option('kafka.bootstrap.servers', 'kafka:29092') \
