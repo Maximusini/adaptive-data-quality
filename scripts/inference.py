@@ -6,7 +6,6 @@ from pyspark.sql import SparkSession
 import pyspark.sql.functions as sf
 from schemas import base_schema, state_schema, output_schema
 
-CHECKPOINT_DIR = '/tmp/checkpoints/inference_stateful'
 MODEL_PATH = '/opt/spark/data/model.joblib'
 WINDOW_SIZE = 30
 
@@ -193,15 +192,26 @@ processed_df = df \
         timeoutConf='NoTimeout'
     )
     
-anomalies_df = processed_df.filter('is_frozen = true OR is_anomaly_ml = true')
+quarantine_df = processed_df.filter('is_frozen = true OR is_anomaly_ml = true')
 
-output_query = anomalies_df \
+query_quarantine = quarantine_df \
     .select(sf.to_json(sf.struct('*'), {'ignoreNullFields': 'false'}).alias('value')) \
     .writeStream \
     .format('kafka') \
     .option('kafka.bootstrap.servers', 'kafka:29092') \
-    .option('topic', 'ml_anomalies') \
-    .option('checkpointLocation', CHECKPOINT_DIR) \
+    .option('topic', 'quarantined_events') \
+    .option('checkpointLocation', '/tmp/checkpoints/inference_quarantine') \
+    .start()
+    
+clean_df = processed_df.filter('is_frozen = false AND is_anomaly_ml = false')
+
+query_clean = clean_df \
+    .select(sf.to_json(sf.struct('*'), {'ignoreNullFields': 'false'}).alias('value')) \
+    .writeStream \
+    .format('kafka') \
+    .option('kafka.bootstrap.servers', 'kafka:29092') \
+    .option('topic', 'clean_events') \
+    .option('checkpointLocation', '/tmp/checkpoints/inference_clean') \
     .start()
     
 spark.streams.awaitAnyTermination()
