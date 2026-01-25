@@ -29,7 +29,8 @@ services:
     restart: always
 
   spark-master:
-    image: apache/spark:3.5.0
+    build: .
+    image: custom_spark:1.0
     container_name: spark-master
     volumes:
       - ./scripts:/opt/spark/scripts
@@ -43,7 +44,7 @@ services:
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
   
   spark-worker:
-    image: apache/spark:3.5.0
+    image: custom_spark:1.0
     container_name: spark-worker
     volumes:
       - ./scripts:/opt/spark/scripts

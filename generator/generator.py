@@ -207,7 +207,7 @@ if __name__ == '__main__':
             
             sim_time += time_step
                 
-            time.sleep(0.25)
+            time.sleep(0.5)
             print('-' * 50)
                 
     except KeyboardInterrupt:
