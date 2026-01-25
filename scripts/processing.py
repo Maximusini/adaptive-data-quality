@@ -26,6 +26,8 @@ df_validated = df.withColumn('validation_error',
                                  sf.col('sensor_id').isNull() |
                                  sf.col('group_id').isNull() |
                                  sf.col('timestamp').isNull() |
+                                 sf.col('temperature').isNull() |
+                                 sf.col('humidity').isNull() |
                                  sf.col('event_id').isNull(),
                                  'missing_critical_fields'                                 
                              )
