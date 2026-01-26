@@ -146,15 +146,7 @@ def process_batch(key, pandasdf_iter, state):
                 'group_id': int(group_id),
                 'temperature': float(curr_temp),
                 'humidity': float(curr_hum),
-                'temp_std': float(temp_std),
-                'temp_diff': float(temp_diff),
-                'temp_dev': float(temp_dev),
-                'hum_std': float(hum_std),
-                'hum_diff': float(hum_diff),
-                'hum_dev': float(hum_dev),
-                'temp_z': float(temp_z),
-                'hour_sin': float(hour_sin),
-                'hour_cos': float(hour_cos),
+                'validation_error': None,
                 'is_frozen': bool(is_frozen),
                 'is_anomaly_ml': bool(is_anomaly_ml)
             })

@@ -49,6 +49,9 @@ df_validated = df.withColumn('validation_error',
                              
                              .otherwise(None)
                              )
+
+df_validated = df_validated.withColumn('is_frozen', sf.lit(False))
+df_validated = df_validated.withColumn('is_anomaly_ml', sf.lit(False))
     
 valid_df = df_validated.where('validation_error IS NULL').select(sf.to_json(sf.struct('*')).alias('value'))
 invalid_df = df_validated.where('validation_error IS NOT NULL').select(sf.to_json(sf.struct('*')).alias('value'))

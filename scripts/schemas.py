@@ -30,15 +30,7 @@ output_schema = StructType([
     StructField('group_id', IntegerType()),
     StructField('temperature', DoubleType()),
     StructField('humidity', DoubleType()),
-    StructField('temp_std', DoubleType()),
-    StructField('temp_diff', DoubleType()),
-    StructField('temp_dev', DoubleType()),
-    StructField('hum_std', DoubleType()),
-    StructField('hum_diff', DoubleType()),
-    StructField('hum_dev', DoubleType()),
-    StructField('temp_z', DoubleType()),
-    StructField('hour_sin', DoubleType()),
-    StructField('hour_cos', DoubleType()),
+    StructField('validation_error', StringType()),
     StructField('is_frozen', BooleanType()),
     StructField('is_anomaly_ml', BooleanType())
 ])
