@@ -4,6 +4,6 @@ WORKDIR /opt/app
 
 RUN pip install --no-cache-dir kafka-python faker numpy
 
-COPY generator.py
+COPY generator/generator.py .
 
 CMD ["python", "generator.py"]
