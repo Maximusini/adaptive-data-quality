@@ -56,6 +56,21 @@ services:
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     depends_on:
       - spark-master
+
+  generator:
+    build:
+      context: .
+      dockerfile: generator/Dockerfile
+    image: data-generator:1.0
+    container_name: generator
+    volumes:
+      - ./generator:/opt/app/generator
+    command: python generator/generator.py
+    environment:
+      KAFKA_BROKER_URL: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_started
   
   postgres:
     image: postgres:17.7
