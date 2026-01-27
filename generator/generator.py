@@ -165,6 +165,9 @@ def inject_format_errors(data):
 
 if __name__ == '__main__':
     kafka_broker = os.environ.get('KAFKA_BROKER_URL', 'localhost:9092')
+    
+    time.sleep(10)
+    
     producer = KafkaProducer(
         bootstrap_servers=kafka_broker, 
         value_serializer=lambda x: json.dumps(x).encode('utf-8')
