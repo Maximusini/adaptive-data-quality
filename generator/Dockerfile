@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir kafka-python faker numpy
 
 COPY generator.py
 
-CMD['python', 'generator.py']
+CMD ["python", "generator.py"]
