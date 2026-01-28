@@ -1,6 +1,8 @@
 import math
 import os
 from kafka import KafkaProducer
+from kafka.admin import KafkaAdminClient, NewTopic
+from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
 from faker import Faker
 import numpy as np
 from datetime import datetime, timedelta
@@ -8,6 +10,28 @@ import time
 import json
 
 fake = Faker()
+
+def create_topics(broker_url):
+    topics = [
+        'raw_events',
+        'technically_valid_events',
+        'quarantined_events',
+        'clean_events'
+    ]
+    
+    admin_client = KafkaAdminClient(bootstrap_servers=broker_url)
+    existing_topics = admin_client.list_topics()
+    
+    new_topics = []
+    for topic in topics:
+        if topic not in existing_topics:
+            new_topics.append(NewTopic(name=topic, num_partitions=1, replication_factor=1))
+    
+    if new_topics:
+        admin_client.create_topics(new_topics=new_topics)
+        
+    if admin_client:
+        admin_client.close()
 
 class VirtualSensor:
     def __init__(self, sensor_id, group_id):
@@ -166,13 +190,33 @@ def inject_format_errors(data):
 if __name__ == '__main__':
     kafka_broker = os.environ.get('KAFKA_BROKER_URL', 'localhost:9092')
     
-    time.sleep(10)
-    
-    producer = KafkaProducer(
-        bootstrap_servers=kafka_broker, 
-        value_serializer=lambda x: json.dumps(x).encode('utf-8')
-    )   
-    
+    for i in range(30):
+        try:
+            print(f'Connection attempt {i+1}')
+            
+            create_topics(kafka_broker)
+        
+            producer = KafkaProducer(
+                bootstrap_servers=kafka_broker, 
+                value_serializer=lambda x: json.dumps(x).encode('utf-8')
+            )
+            
+            print('Successfully connected to Kafka')
+            
+            break
+        
+        except NoBrokersAvailable:
+            print('Kafka not ready yet. Retrying in 2 seconds')
+            time.sleep(2)
+        
+        except Exception as e:
+            print(f'{e}. Retrying in 2 seconds')
+            time.sleep(2)
+            
+    if producer is None:
+        print('Failed to connect to Kafka after multiple retries. Exiting.')
+        exit(1)
+        
     NUM_SENSORS = 40
     NUM_GROUPS = 10
     
@@ -206,12 +250,10 @@ if __name__ == '__main__':
                 
                 producer.send('raw_events', event)
                 
-                print(f'Отправлен event sensor_id={sensor.sensor_id}')
             
             sim_time += time_step
                 
             time.sleep(1)
-            print('-' * 50)
                 
     except KeyboardInterrupt:
         print('\nГенератор остановлен.')
