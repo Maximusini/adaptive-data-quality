@@ -169,6 +169,7 @@ source = spark.readStream \
     .option('kafka.bootstrap.servers', 'kafka:29092') \
     .option('subscribe', 'technically_valid_events') \
     .option('startingOffsets', 'latest') \
+    .option('maxOffsetsPerTrigger', 1000) \
     .load()
     
 df = source.select(sf.from_json(sf.col('value').cast('string'), base_schema).alias('data')).select('data.*')
