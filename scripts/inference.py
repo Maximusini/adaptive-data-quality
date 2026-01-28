@@ -28,7 +28,10 @@ def process_batch(key, pandasdf_iter, state):
         
     model = get_model(MODEL_PATH)
     
-    results = []
+    output_rows = []
+    
+    batch_features = []
+    batch_indices = []
     
     for df in pandasdf_iter:
         for index, row in df.iterrows():
@@ -98,48 +101,8 @@ def process_batch(key, pandasdf_iter, state):
             is_frozen = False
             if temp_std <= 0.001 or hum_std <= 0.001:
                 is_frozen = True
-                
-            is_anomaly_ml = False
-            
-            if not is_frozen:
-                input_data = {
-                    'temperature': [curr_temp],
-                    'temp_diff': [temp_diff],
-                    'temp_std': [temp_std],
-                    'humidity': [curr_hum],
-                    'hum_diff': [hum_diff],
-                    'hum_std': [hum_std],
-                    'hour_sin': [hour_sin],
-                    'hour_cos': [hour_cos],
-                    'temp_dev': [temp_dev],
-                    'hum_dev': [hum_dev],
-                    'temp_z': [temp_z]
-                }
-                
-                X = pd.DataFrame(input_data)
-                feature_order = [
-                    'temperature',
-                    'temp_diff',
-                    'temp_std',
-                    'humidity',
-                    'hum_diff',
-                    'hum_std',
-                    'hour_sin',
-                    'hour_cos',
-                    'temp_dev',
-                    'hum_dev',
-                    'temp_z'
-                ]
-                X = X[feature_order]
-                
-                X = X.fillna(0)
-                
-                pred = model.predict(X)[0]
-                
-                if pred == 1:
-                    is_anomaly_ml = True
-                    
-            results.append({
+                            
+            result_row = {
                 'event_id': str(row['event_id']),
                 'timestamp': row['timestamp'],
                 'sensor_id': int(sensor_id),
@@ -148,13 +111,44 @@ def process_batch(key, pandasdf_iter, state):
                 'humidity': float(curr_hum),
                 'validation_error': None,
                 'is_frozen': bool(is_frozen),
-                'is_anomaly_ml': bool(is_anomaly_ml)
-            })
+                'is_anomaly_ml': False
+            }
             
+            output_rows.append(result_row)
+            
+            if not is_frozen:
+                feature_order = [
+                    curr_temp,
+                    temp_diff,
+                    temp_std,
+                    curr_hum,
+                    hum_diff,
+                    hum_std,
+                    hour_sin,
+                    hour_cos,
+                    temp_dev,
+                    hum_dev,
+                    temp_z
+                ]
+                
+                batch_features.append(feature_order)
+                batch_indices.append(len(output_rows) - 1)
+                
+    if len(batch_features) > 0:
+        X_batch = np.array(batch_features)
+        X_batch = np.nan_to_num(X_batch)
+        
+        preds = model.predict(X_batch)
+
+        for i, pred in enumerate(preds):
+            row_index = batch_indices[i]
+            if pred == 1:
+                output_rows[row_index]['is_anomaly_ml'] = True
+    
     new_json_str = json.dumps(room_history)
     state.update((key[0], new_json_str))
     
-    yield pd.DataFrame(results)
+    yield pd.DataFrame(output_rows)
 
 spark = SparkSession \
     .builder \
@@ -169,7 +163,6 @@ source = spark.readStream \
     .option('kafka.bootstrap.servers', 'kafka:29092') \
     .option('subscribe', 'technically_valid_events') \
     .option('startingOffsets', 'latest') \
-    .option('maxOffsetsPerTrigger', 1000) \
     .load()
     
 df = source.select(sf.from_json(sf.col('value').cast('string'), base_schema).alias('data')).select('data.*')
