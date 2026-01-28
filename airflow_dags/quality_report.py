@@ -1,5 +1,5 @@
 from airflow import DAG
-from airflow.providers.standard.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import pandas as pd
 import os
@@ -49,7 +49,7 @@ default_args = {
 dag_object = DAG(
     dag_id='data_quality_report',
     default_args=default_args,
-    schedule_interval=timedelta(minutes=24),
+    schedule=timedelta(minutes=24),
     catchup=False
 )
 
