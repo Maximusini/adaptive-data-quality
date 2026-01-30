@@ -5,6 +5,7 @@ import os
 from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
+from schemas import FEATURE_COLUMNS
 
 if os.path.exists('/opt/spark/data'):
     DATA_DIR = '/opt/spark/data'
@@ -50,7 +51,6 @@ df['hum_dev'] = (df['humidity'] - df['g_hum_mean']).abs()
 
 df['temp_z'] = df['temp_dev'] / df['g_temp_std']
 
-
 # NaN из-за сдвига
 df = df.dropna(subset=['temp_std', 'hum_std', 'temp_diff'])
 
@@ -62,21 +62,7 @@ df['is_frozen'] = (df['temp_std'] <= 0.001) | (df['hum_std'] <= 0.001)
 
 df_for_ml = df[df['is_frozen'] == False].copy()
 
-features = [
-    'temperature',
-    'temp_diff',
-    'temp_std',
-    'humidity',
-    'hum_diff',
-    'hum_std',
-    'hour_sin',
-    'hour_cos',
-    'temp_dev',
-    'hum_dev',
-    'temp_z'
-]
-
-X = df_for_ml[features]
+X = df_for_ml[FEATURE_COLUMNS]
 y = df_for_ml['is_anomaly'].astype(int)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -96,8 +82,7 @@ print(classification_report(y_test, preds))
 print('\nМатрица ошибок')
 print(confusion_matrix(y_test, preds))
 
-# Красивый вывод важности
-importances = pd.Series(rf.feature_importances_, index=features).sort_values(ascending=False)
+importances = pd.Series(rf.feature_importances_, index=FEATURE_COLUMNS).sort_values(ascending=False)
 print('\nТоп признаков')
 print(importances)
 
