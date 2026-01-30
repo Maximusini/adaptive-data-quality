@@ -2,19 +2,25 @@ import pandas as pd
 import numpy as np
 import joblib
 import json
+import os
+import time
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as sf
-from schemas import base_schema, state_schema, output_schema
+from schemas import base_schema, state_schema, output_schema, FEATURE_COLUMNS
 
 MODEL_PATH = '/opt/spark/data/model.joblib'
 WINDOW_SIZE = 30
 
 model = None
+model_load_time = 0
 
 def get_model(path):
-    global model
-    if model is None:
-        model = joblib.load(path)
+    global model, model_load_time
+    if os.path.exists(path):
+        file_mod_time = os.path.getmtime(path)
+        if model is None or (file_mod_time > model_load_time):
+            model = joblib.load(path)
+            model_load_time = file_mod_time
     return model
 
 def process_batch(key, pandasdf_iter, state):
@@ -117,21 +123,23 @@ def process_batch(key, pandasdf_iter, state):
             output_rows.append(result_row)
             
             if not is_frozen:
-                feature_order = [
-                    curr_temp,
-                    temp_diff,
-                    temp_std,
-                    curr_hum,
-                    hum_diff,
-                    hum_std,
-                    hour_sin,
-                    hour_cos,
-                    temp_dev,
-                    hum_dev,
-                    temp_z
-                ]
+                features_dict = {
+                'temperature': curr_temp,
+                'temp_diff': temp_diff,
+                'temp_std': temp_std,
+                'humidity': curr_hum,
+                'hum_diff': hum_diff,
+                'hum_std': hum_std,
+                'hour_sin': hour_sin,
+                'hour_cos': hour_cos,
+                'temp_dev': temp_dev,
+                'hum_dev': hum_dev,
+                'temp_z': temp_z
+                }
                 
-                batch_features.append(feature_order)
+                feature_vector = [features_dict[col] for col in FEATURE_COLUMNS]
+                
+                batch_features.append(feature_vector)
                 batch_indices.append(len(output_rows) - 1)
                 
     if len(batch_features) > 0:
