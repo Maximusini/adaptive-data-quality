@@ -1,11 +1,17 @@
-from pyspark.sql.types import StructType, StructField, DoubleType, IntegerType, StringType, TimestampType, BooleanType
+"""
+schemas.py
+Определение схем данных PySpark.
+"""
+from pyspark.sql.types import StructType, StructField, DoubleType, \
+                              IntegerType, StringType, TimestampType, BooleanType
 
+# Метаданные от генератора событий
 meta_schema = StructType([
     StructField('is_anomaly', BooleanType()),
-    StructField('error_type', StringType()),
-    
+    StructField('error_type', StringType())
 ])
 
+# Основная схема входящих событий
 base_schema = StructType([
     StructField('event_id', StringType()),
     StructField('timestamp', TimestampType()),
@@ -18,11 +24,13 @@ base_schema = StructType([
     StructField('meta_info', meta_schema)
 ])
 
+# Схема для хранения состояния между батчами
 state_schema = StructType([
     StructField('group_id', IntegerType()),
     StructField('sensors_data_json', StringType())
 ])
 
+# Схема выходных событий после инференса
 output_schema = StructType([
     StructField('event_id', StringType()),
     StructField('timestamp', TimestampType()),
@@ -34,17 +42,3 @@ output_schema = StructType([
     StructField('is_frozen', BooleanType()),
     StructField('is_anomaly_ml', BooleanType())
 ])
-
-FEATURE_COLUMNS = [
-    'temperature', 
-    'temp_diff', 
-    'temp_std',
-    'humidity', 
-    'hum_diff', 
-    'hum_std',
-    'hour_sin', 
-    'hour_cos',
-    'temp_dev', 
-    'hum_dev', 
-    'temp_z'
-]
