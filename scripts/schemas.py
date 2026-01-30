@@ -34,3 +34,17 @@ output_schema = StructType([
     StructField('is_frozen', BooleanType()),
     StructField('is_anomaly_ml', BooleanType())
 ])
+
+FEATURE_COLUMNS = [
+    'temperature', 
+    'temp_diff', 
+    'temp_std',
+    'humidity', 
+    'hum_diff', 
+    'hum_std',
+    'hour_sin', 
+    'hour_cos',
+    'temp_dev', 
+    'hum_dev', 
+    'temp_z'
+]
