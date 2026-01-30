@@ -6,7 +6,7 @@ settings.py
 import os 
 from pathlib import Path
 
-BASE_DIR = Path('/opt/spark/data') if os.path.exists('/opt/spark/data') else Path('/data')
+BASE_DIR = Path('/opt/spark/data') if os.path.exists('/opt/spark/data') else Path('./data')
 MODEL_PATH = BASE_DIR / 'model.joblib'
 CHECKPOINT_DIR = Path('/tmp/checkpoints')
 
