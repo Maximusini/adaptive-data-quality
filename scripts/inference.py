@@ -194,7 +194,11 @@ def process_batch(key: tuple, pandasdf_iter: Iterator[pd.DataFrame], state: Any)
         X_batch = np.array(batch_features)
         X_batch = np.nan_to_num(X_batch)
         
-        preds = model.predict(X_batch)
+        if model is None:
+            logger.warning('Model not available. Skipping ML anomaly detection.')
+            preds = [0] * len(X_batch)
+        else:    
+            preds = model.predict(X_batch)
 
         for i, pred in enumerate(preds):
             row_index = batch_indices[i]
