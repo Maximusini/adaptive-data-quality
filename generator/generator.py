@@ -1,40 +1,55 @@
-import math
+"""
+generator.py
+Эмулятор IoT датчиков с симуляцией физических процессов и возможных неисправностей.
+"""
 import os
-from kafka import KafkaProducer
-from kafka.admin import KafkaAdminClient, NewTopic
-from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
-from faker import Faker
+import json
+import time
+import math
+import logging
+from typing import Any, Dict
 import numpy as np
 from datetime import datetime, timedelta
-import time
-import json
+from kafka import KafkaProducer, KafkaAdminClient
+from kafka.admin import NewTopic
+from kafka.errors import NoBrokersAvailable
+from faker import Faker
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 fake = Faker()
-
-def create_topics(broker_url):
-    topics = [
+KAFKA_BROKER = os.environ.get('KAFKA_BROKER_URL', 'kafka:29092')
+TOPICS = [
         'raw_events',
         'technically_valid_events',
         'quarantined_events',
         'clean_events'
     ]
-    
-    admin_client = KafkaAdminClient(bootstrap_servers=broker_url)
-    existing_topics = admin_client.list_topics()
-    
-    new_topics = []
-    for topic in topics:
-        if topic not in existing_topics:
-            new_topics.append(NewTopic(name=topic, num_partitions=1, replication_factor=1))
-    
-    if new_topics:
-        admin_client.create_topics(new_topics=new_topics)
+
+
+def create_topics(broker_url):
+    """
+    Создает необходимые топики в Kafka, если они еще не созданы.
+    """
+    try:
+        admin = KafkaAdminClient(bootstrap_servers=KAFKA_BROKER)
+        existing_topics = admin.list_topics()
         
-    if admin_client:
-        admin_client.close()
+        new_topics = [
+            NewTopic(name=topic, num_partitions=1, replication_factor=1)
+            for topic in TOPICS if topic not in existing_topics
+        ]
+        
+        if new_topics:
+            admin.create_topics(new_topics)
+            logger.info(f'Created topics: {[topic.name for topic in new_topics]}')
+        admin.close()
+    except Exception as e:
+        logger.error(f'Error creating topics: {e}')
 
 class VirtualSensor:
-    def __init__(self, sensor_id, group_id):
+    def __init__(self, sensor_id: int, group_id: int):
         self.sensor_id = sensor_id
         self.group_id = group_id
 
@@ -49,7 +64,10 @@ class VirtualSensor:
         self.frozen_hum_val = None # Значение, на котором завис гигрометр
         self.steps_in_anomaly = 0 # Сколько тактов уже длится глюк
         
-    def update_health(self, current_true_temp, current_true_hum):
+    def update_health(self, current_true_temp: float, current_true_hum: float):
+        """
+        Вероятностное обновление состояния датчика (поломка/ремонт).
+        """
         # Если датчик здоров, есть шанс 0.1%, что он сломается
         if self.anomaly_mode is None:
             if np.random.random() < 0.001:
@@ -85,7 +103,11 @@ class VirtualSensor:
                 self.frozen_temp_val = None
                 self.frozen_hum_val = None
     
-    def emit_data(self, true_temp, current_time):
+    def emit_data(self, true_temp: float, current_time: str) -> Dict[str, Any]:
+        """
+        Генерация одного события данных с учетом текущей температуры и состояния датчика.
+        """
+        # Физическая модель влажности в зависимости от температуры (выше температура - ниже влажность)
         approx_hum = 45.0 - (true_temp - 22.0) * 2.5 + self.base_humidity_bias
         self.update_health(true_temp, approx_hum)
         
@@ -96,7 +118,6 @@ class VirtualSensor:
             true_humidity = 45.0 + (true_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
             
         else:
-            # Если температура +25, влажность падает. Если +18, растет.
             true_humidity = 45.0 - (true_temp - 22.0) * 2.5 + self.base_humidity_bias + humidity_noise
             true_humidity = max(0, min(100, true_humidity))
         
@@ -171,7 +192,10 @@ class VirtualSensor:
         }
         return data
 
-def inject_format_errors(data):
+def inject_format_errors(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Вероятностное внедрение ошибок формата в данные.
+    """
     if data['meta_info']['is_anomaly']: 
         return data # Если уже поломка, то не трогаем
 
