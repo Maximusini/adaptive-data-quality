@@ -186,6 +186,22 @@ services:
       --py-files /opt/spark/scripts/schemas.py,/opt/spark/scripts/settings.py
       /opt/spark/scripts/inference.py
     restart: on-failure:5
+  
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    image: dashboard:1.0
+    container_name: dashboard
+    ports:
+      - '8501:8501'
+    volumes:
+      - ./dashboard:/app
+    environment:
+      KAFKA_BROKER_URL: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_started
 
 volumes:
   spark-logs:
