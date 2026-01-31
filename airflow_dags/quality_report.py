@@ -1,3 +1,7 @@
+"""
+quality_report.py
+Ежедневный отчёт по качеству данных.
+"""
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
@@ -46,15 +50,15 @@ default_args = {
     'retries': 1
 }
 
-dag_object = DAG(
+dag = DAG(
     dag_id='data_quality_report',
     default_args=default_args,
-    schedule=timedelta(minutes=24),
+    schedule_interval=timedelta(minutes=24),
     catchup=False
 )
 
 operator = PythonOperator(
     task_id='create_report',
     python_callable=generate_report,
-    dag=dag_object
+    dag=dag
 )
