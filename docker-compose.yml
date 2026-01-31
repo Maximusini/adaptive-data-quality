@@ -160,6 +160,7 @@ services:
       --executor-memory 1G 
       --conf spark.jars.ivy=/tmp/.ivy 
       --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 
+      --py-files /opt/spark/scripts/schemas.py,/opt/spark/scripts/settings.py
       /opt/spark/scripts/processing.py
     restart: on-failure:5
 
@@ -182,6 +183,7 @@ services:
       --executor-memory 1500M 
       --conf spark.jars.ivy=/tmp/.ivy 
       --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 
+      --py-files /opt/spark/scripts/schemas.py,/opt/spark/scripts/settings.py
       /opt/spark/scripts/inference.py
     restart: on-failure:5
 
