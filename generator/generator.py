@@ -212,12 +212,11 @@ def inject_format_errors(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 if __name__ == '__main__':
+    producer = None
     kafka_broker = os.environ.get('KAFKA_BROKER_URL', 'localhost:9092')
     
     for i in range(30):
         try:
-            print(f'Connection attempt {i+1}')
-            
             create_topics(kafka_broker)
         
             producer = KafkaProducer(
@@ -225,20 +224,16 @@ if __name__ == '__main__':
                 value_serializer=lambda x: json.dumps(x).encode('utf-8')
             )
             
-            print('Successfully connected to Kafka')
+            logger.info('Successfully connected to Kafka.')
             
             break
         
         except NoBrokersAvailable:
-            print('Kafka not ready yet. Retrying in 2 seconds')
-            time.sleep(2)
-        
-        except Exception as e:
-            print(f'{e}. Retrying in 2 seconds')
+            logger.warning('Kafka not ready yet. Retrying in 2 seconds.')
             time.sleep(2)
             
     if producer is None:
-        print('Failed to connect to Kafka after multiple retries. Exiting.')
+        logger.error('Failed to connect to Kafka after multiple retries. Exiting.')
         exit(1)
         
     NUM_SENSORS = 40
